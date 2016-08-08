@@ -14,10 +14,12 @@
 # limitations under the License.
 
 import os
+import random
 import subprocess
 from ducktape.template import TemplateRenderer
 from kafkatest.services.security.minikdc import MiniKdc
 import itertools
+
 
 class Keytool(object):
 
@@ -27,10 +29,10 @@ class Keytool(object):
         Generate JKS keystore and truststore and return
         Kafka SSL properties with these stores.
         """
-        ks_path = os.path.join(ssl_dir, 'test.keystore.jks')
+        ks_path = os.path.join(ssl_dir, "test.keystore-%s.jks" % str(random.randint(1, 2**63 - 1)))
         ks_password = 'test-ks-passwd'
         key_password = 'test-key-passwd'
-        ts_path = os.path.join(ssl_dir, 'test.truststore.jks')
+        ts_path = os.path.join(ssl_dir, "test.truststore-%s.jks" % str(random.randint(1, 2**63 - 1)))
         ts_password = 'test-ts-passwd'
         if os.path.exists(ks_path):
             os.remove(ks_path)
@@ -117,8 +119,8 @@ class SecurityConfig(TemplateRenderer):
 
     def setup_ssl(self, node):
         node.account.ssh("mkdir -p %s" % SecurityConfig.CONFIG_DIR, allow_fail=False)
-        node.account.scp_to(SecurityConfig.ssl_stores['ssl.keystore.location'], SecurityConfig.KEYSTORE_PATH)
-        node.account.scp_to(SecurityConfig.ssl_stores['ssl.truststore.location'], SecurityConfig.TRUSTSTORE_PATH)
+        node.account.copy_to(SecurityConfig.ssl_stores['ssl.keystore.location'], SecurityConfig.KEYSTORE_PATH)
+        node.account.copy_to(SecurityConfig.ssl_stores['ssl.truststore.location'], SecurityConfig.TRUSTSTORE_PATH)
 
     def setup_sasl(self, node):
         node.account.ssh("mkdir -p %s" % SecurityConfig.CONFIG_DIR, allow_fail=False)
@@ -133,8 +135,8 @@ class SecurityConfig(TemplateRenderer):
                                 enabled_sasl_mechanisms=self.enabled_sasl_mechanisms)
         node.account.create_file(SecurityConfig.JAAS_CONF_PATH, jaas_conf)
         if self.has_sasl_kerberos:
-            node.account.scp_to(MiniKdc.LOCAL_KEYTAB_FILE, SecurityConfig.KEYTAB_PATH)
-            node.account.scp_to(MiniKdc.LOCAL_KRB5CONF_FILE, SecurityConfig.KRB5CONF_PATH)
+            node.account.copy_to(MiniKdc.LOCAL_KEYTAB_FILE, SecurityConfig.KEYTAB_PATH)
+            node.account.copy_to(MiniKdc.LOCAL_KRB5CONF_FILE, SecurityConfig.KRB5CONF_PATH)
 
     def setup_node(self, node):
         if self.has_ssl:

@@ -15,6 +15,7 @@
 
 from ducktape.tests.test import Test
 from ducktape.mark import parametrize
+from ducktape.mark.resource import cluster
 
 from kafkatest.services.zookeeper import ZookeeperService
 from kafkatest.services.kafka import KafkaService
@@ -66,8 +67,10 @@ class QuotaTest(Test):
         """Override this since we're adding services outside of the constructor"""
         return super(QuotaTest, self).min_cluster_size() + self.num_producers + self.num_consumers
 
+    @cluster(num_nodes=4)
     @parametrize(producer_id='default_id', producer_num=1, consumer_id='default_id', consumer_num=1)
     @parametrize(producer_id='overridden_id', producer_num=1, consumer_id='overridden_id', consumer_num=1)
+    @cluster(num_nodes=5)
     @parametrize(producer_id='overridden_id', producer_num=1, consumer_id='overridden_id', consumer_num=2)
     def test_quota(self, producer_id='default_id', producer_num=1, consumer_id='default_id', consumer_num=1):
         # Produce all messages
