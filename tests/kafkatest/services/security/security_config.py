@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import os
-import random
 import subprocess
 from ducktape.template import TemplateRenderer
 from kafkatest.services.security.minikdc import MiniKdc
@@ -29,10 +28,10 @@ class Keytool(object):
         Generate JKS keystore and truststore and return
         Kafka SSL properties with these stores.
         """
-        ks_path = os.path.join(ssl_dir, "test.keystore-%s.jks" % str(random.randint(1, 2**63 - 1)))
+        ks_path = os.path.join(ssl_dir, "test.keystore.jks")
         ks_password = 'test-ks-passwd'
         key_password = 'test-key-passwd'
-        ts_path = os.path.join(ssl_dir, "test.truststore-%s.jks" % str(random.randint(1, 2**63 - 1)))
+        ts_path = os.path.join(ssl_dir, "test.truststore.jks")
         ts_password = 'test-ts-passwd'
         if os.path.exists(ks_path):
             os.remove(ks_path)
@@ -45,11 +44,11 @@ class Keytool(object):
         os.remove('test.crt')
 
         return {
-            'ssl.keystore.location' : ks_path,
-            'ssl.keystore.password' : ks_password,
-            'ssl.key.password' : key_password,
-            'ssl.truststore.location' : ts_path,
-            'ssl.truststore.password' : ts_password
+            'ssl.keystore.location': ks_path,
+            'ssl.keystore.password': ks_password,
+            'ssl.key.password': key_password,
+            'ssl.truststore.location': ts_path,
+            'ssl.truststore.password': ts_password
         }
 
     @staticmethod
@@ -75,9 +74,10 @@ class SecurityConfig(TemplateRenderer):
     KRB5CONF_PATH = "/mnt/security/krb5.conf"
     KEYTAB_PATH = "/mnt/security/keytab"
 
-    ssl_stores = Keytool.generate_keystore_truststore('.')
+    # This is initialized only when the first instance of SecurityConfig is created
+    ssl_stores = None
 
-    def __init__(self, security_protocol=None, interbroker_security_protocol=None,
+    def __init__(self, context, security_protocol=None, interbroker_security_protocol=None,
                  client_sasl_mechanism=SASL_MECHANISM_GSSAPI, interbroker_sasl_mechanism=SASL_MECHANISM_GSSAPI,
                  zk_sasl=False, template_props=""):
         """
@@ -87,6 +87,12 @@ class SecurityConfig(TemplateRenderer):
         template properties file is used. If no protocol is specified in the
         template properties either, PLAINTEXT is used as default.
         """
+        if not SecurityConfig.ssl_stores:
+            # This generates keystore/trustore files in a local scratch directory which gets
+            # automatically destroyed after the test is run
+            # Creating within the scratch directory allows us to run tests in parallel without fear of collision
+            print "SCRATCH!", context.scratch_dir
+            SecurityConfig.ssl_stores = Keytool.generate_keystore_truststore(context.scratch_dir)
 
         if security_protocol is None:
             security_protocol = self.get_property('security.protocol', template_props)
@@ -112,7 +118,6 @@ class SecurityConfig(TemplateRenderer):
             'sasl.mechanism.inter.broker.protocol' : interbroker_sasl_mechanism,
             'sasl.kerberos.service.name' : 'kafka'
         }
-
 
     def client_config(self, template_props=""):
         return SecurityConfig(self.security_protocol, client_sasl_mechanism=self.client_sasl_mechanism, template_props=template_props)

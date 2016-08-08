@@ -47,7 +47,7 @@ class ZookeeperService(KafkaPathResolverMixin, Service):
 
     @property
     def security_config(self):
-        return SecurityConfig(zk_sasl=self.zk_sasl)
+        return SecurityConfig(self.context, zk_sasl=self.zk_sasl)
 
     @property
     def security_system_properties(self):
