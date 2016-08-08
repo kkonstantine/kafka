@@ -37,11 +37,12 @@ class Keytool(object):
             os.remove(ks_path)
         if os.path.exists(ts_path):
             os.remove(ts_path)
-        
+
+        test_crt = os.path.join(ssl_dir, "test.crt")
         Keytool.runcmd("keytool -genkeypair -alias test -keyalg RSA -keysize 2048 -keystore %s -storetype JKS -keypass %s -storepass %s -dname CN=systemtest" % (ks_path, key_password, ks_password))
-        Keytool.runcmd("keytool -export -alias test -keystore %s -storepass %s -storetype JKS -rfc -file test.crt" % (ks_path, ks_password))
-        Keytool.runcmd("keytool -import -alias test -file test.crt -keystore %s -storepass %s -storetype JKS -noprompt" % (ts_path, ts_password))
-        os.remove('test.crt')
+        Keytool.runcmd("keytool -export -alias test -keystore %s -storepass %s -storetype JKS -rfc -file %s" % (ks_path, ks_password, test_crt))
+        Keytool.runcmd("keytool -import -alias test -file %s -keystore %s -storepass %s -storetype JKS -noprompt" % (test_crt, ts_path, ts_password))
+        os.remove(test_crt)
 
         return {
             'ssl.keystore.location': ks_path,
