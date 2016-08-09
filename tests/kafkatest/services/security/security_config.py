@@ -89,6 +89,7 @@ class SecurityConfig(TemplateRenderer):
         template properties file is used. If no protocol is specified in the
         template properties either, PLAINTEXT is used as default.
         """
+        self.context = context
         if not SecurityConfig.ssl_stores:
             # This generates keystore/trustore files in a local scratch directory which gets
             # automatically destroyed after the test is run
@@ -121,7 +122,7 @@ class SecurityConfig(TemplateRenderer):
         }
 
     def client_config(self, template_props=""):
-        return SecurityConfig(self.security_protocol, client_sasl_mechanism=self.client_sasl_mechanism, template_props=template_props)
+        return SecurityConfig(self.context, self.security_protocol, client_sasl_mechanism=self.client_sasl_mechanism, template_props=template_props)
 
     def setup_ssl(self, node):
         node.account.ssh("mkdir -p %s" % SecurityConfig.CONFIG_DIR, allow_fail=False)
