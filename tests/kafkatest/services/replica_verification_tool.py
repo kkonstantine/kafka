@@ -63,8 +63,9 @@ class ReplicaVerificationTool(KafkaPathResolverMixin, BackgroundThreadService):
             partition:      a partition of the topic
         """
         topic_partition = topic + ',' + str(partition)
-        lag = self.partition_lag[topic_partition]
+        lag = self.partition_lag.get(topic_partition)
         self.logger.debug("Retuning lag for {} as {}".format(topic_partition, lag))
+
         return lag
 
     def start_cmd(self, node):
