@@ -61,11 +61,13 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -164,15 +166,33 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
         this.workerTasksShutdownTimeoutMs = config.getLong(DistributedConfig.TASK_SHUTDOWN_GRACEFUL_TIMEOUT_MS_CONFIG);
         this.workerUnsyncBackoffMs = config.getInt(DistributedConfig.WORKER_UNSYNC_BACKOFF_MS_CONFIG);
         this.member = member != null ? member : new WorkerGroupMember(config, restUrl, this.configBackingStore, new RebalanceListener(), time);
-        this.herderExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingDeque<Runnable>(1),
-                new ThreadFactory() {
-                    @Override
-                    public Thread newThread(Runnable herder) {
-                        return new Thread(herder, "DistributedHerder");
-                    }
-                });
-        this.forwardRequestExecutor = Executors.newSingleThreadExecutor();
-        this.startAndStopExecutor = Executors.newFixedThreadPool(START_STOP_THREAD_POOL_SIZE);
+        this.herderExecutor = new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingDeque<Runnable>(1),
+                new ExplicitPriorityThreadFactory("DistributedHerder", Thread.MAX_PRIORITY)
+        );
+
+        this.forwardRequestExecutor = Executors.newSingleThreadExecutor(
+                new ExplicitPriorityThreadFactory(
+                        "DistributedHerderForwardRequest",
+                        Thread.MAX_PRIORITY
+                )
+        );
+
+        this.startAndStopExecutor = new ThreadPoolExecutor(
+                START_STOP_THREAD_POOL_SIZE,
+                START_STOP_THREAD_POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<Runnable>(),
+                new ExplicitPriorityThreadFactory(
+                        "DistributedHerderStartAndStop",
+                        Thread.MAX_PRIORITY
+                )
+        );
 
         stopping = new AtomicBoolean(false);
         configState = ClusterConfigState.EMPTY;
@@ -184,6 +204,37 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
     @Override
     public void start() {
         this.herderExecutor.submit(this);
+    }
+
+    static class ExplicitPriorityThreadFactory implements ThreadFactory {
+        private static AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String threadNamePrefix;
+        private final int threadPriority;
+
+        public ExplicitPriorityThreadFactory(String threadNamePrefix) {
+            this(threadNamePrefix, Thread.NORM_PRIORITY);
+        }
+
+        public ExplicitPriorityThreadFactory(String threadNamePrefix, int priority) {
+            this.threadNamePrefix = threadNamePrefix;
+            if (priority > Thread.MAX_PRIORITY || priority < Thread.MIN_PRIORITY) {
+                throw new IllegalArgumentException(
+                        "Thread priority must be in the range of [Thread.MIN_PRIORITY, Thread"
+                                + ".MAX_PRIORITY]"
+                );
+            }
+            this.threadPriority = priority;
+        }
+
+        @Override
+        public Thread newThread(Runnable herder) {
+            Thread thread = new Thread(
+                    herder,
+                    threadNamePrefix + "-thread-" + threadNumber.getAndIncrement()
+            );
+            thread.setPriority(threadPriority);
+            return thread;
+        }
     }
 
     @Override
