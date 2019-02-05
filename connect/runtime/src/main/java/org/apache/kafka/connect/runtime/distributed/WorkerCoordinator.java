@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -56,6 +57,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     private ConnectProtocol.Assignment assignmentSnapshot;
     private ClusterConfigState configSnapshot;
     private final WorkerRebalanceListener listener;
+    private final ConnectProtocolCompatibility protocolCompatibility;
     private LeaderState leaderState;
 
     private boolean rejoinRequested;
@@ -75,7 +77,8 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
                              long retryBackoffMs,
                              String restUrl,
                              ConfigBackingStore configStorage,
-                             WorkerRebalanceListener listener) {
+                             WorkerRebalanceListener listener,
+                             ConnectProtocolCompatibility protocolCompatibility) {
         super(logContext,
               client,
               groupId,
@@ -94,6 +97,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         new WorkerCoordinatorMetrics(metrics, metricGrpPrefix);
         this.listener = listener;
         this.rejoinRequested = false;
+        this.protocolCompatibility = protocolCompatibility;
     }
 
     @Override
@@ -149,13 +153,33 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     public JoinGroupRequestData.JoinGroupRequestProtocolSet metadata() {
         configSnapshot = configStorage.snapshot();
         ConnectProtocol.WorkerState workerState = new ConnectProtocol.WorkerState(restUrl, configSnapshot.offset());
-        ByteBuffer metadata = ConnectProtocol.serializeMetadata(workerState);
-        return new JoinGroupRequestData.JoinGroupRequestProtocolSet(
-                Collections.singleton(new JoinGroupRequestData.JoinGroupRequestProtocol()
-                        .setName(DEFAULT_SUBPROTOCOL)
-                        .setMetadata(metadata.array()))
-                        .iterator()
-        );
+        ByteBuffer metadata;
+        switch (protocolCompatibility) {
+            case STRICT:
+                metadata = ConnectProtocol.serializeMetadata(workerState);
+                return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Collections.singleton(
+                        new JoinGroupRequestData.JoinGroupRequestProtocol()
+                                .setName(protocolCompatibility.protocol())
+                                .setMetadata(metadata.array()))
+                        .iterator());
+            case COMPAT:
+                return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Arrays.asList(
+                        new JoinGroupRequestData.JoinGroupRequestProtocol()
+                                .setName(protocolCompatibility.protocol())
+                                .setMetadata(IncrementalCooperativeConnectProtocol.serializeMetadata(workerState).array()),
+                        new JoinGroupRequestData.JoinGroupRequestProtocol()
+                                .setName(protocolCompatibility.protocol())
+                                .setMetadata(ConnectProtocol.serializeMetadata(workerState).array()))
+                        .iterator());
+            case COOP:
+                return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Collections.singleton(
+                        new JoinGroupRequestData.JoinGroupRequestProtocol()
+                                .setName(protocolCompatibility.protocol())
+                                .setMetadata(IncrementalCooperativeConnectProtocol.serializeMetadata(workerState).array()))
+                        .iterator());
+            default:
+                throw new IllegalStateException("Unknown Connect protocol compatibility mode " + protocolCompatibility);
+        }
     }
 
     @Override

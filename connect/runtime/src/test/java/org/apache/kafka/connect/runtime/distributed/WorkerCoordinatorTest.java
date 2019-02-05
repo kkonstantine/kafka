@@ -41,6 +41,8 @@ import org.easymock.Mock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.powermock.api.easymock.PowerMock;
 import org.powermock.reflect.Whitebox;
 
@@ -57,7 +59,10 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.runners.Parameterized.Parameter;
+import static org.junit.runners.Parameterized.Parameters;
 
+@RunWith(value = Parameterized.class)
 public class WorkerCoordinatorTest {
 
     private static final String LEADER_URL = "leaderUrl:8083";
@@ -90,6 +95,23 @@ public class WorkerCoordinatorTest {
     private ClusterConfigState configState2;
     private ClusterConfigState configStateSingleTaskConnectors;
 
+    // Arguments are:
+    // - Protocol type
+    // - Expected metadata size
+    @Parameters
+    public static Iterable<?> mode() {
+        return Arrays.asList(new Object[][]{
+                {ConnectProtocolCompatibility.STRICT, 1},
+                {ConnectProtocolCompatibility.COMPAT, 2},
+                {ConnectProtocolCompatibility.COOP, 1}});
+    }
+
+    @Parameter
+    public ConnectProtocolCompatibility compatibility;
+
+    @Parameter(1)
+    public int expectedMetadataSize;
+
     @Before
     public void setup() {
         LogContext logContext = new LogContext();
@@ -117,7 +139,8 @@ public class WorkerCoordinatorTest {
                 retryBackoffMs,
                 LEADER_URL,
                 configStorage,
-                rebalanceListener);
+                rebalanceListener,
+                compatibility);
 
         configState1 = new ClusterConfigState(
                 1L,
@@ -191,12 +214,12 @@ public class WorkerCoordinatorTest {
         PowerMock.replayAll();
 
         JoinGroupRequestData.JoinGroupRequestProtocolSet serialized = coordinator.metadata();
-        assertEquals(1, serialized.size());
+        assertEquals(expectedMetadataSize, serialized.size());
 
         Iterator<JoinGroupRequestData.JoinGroupRequestProtocol> protocolIterator = serialized.iterator();
         assertTrue(protocolIterator.hasNext());
         JoinGroupRequestData.JoinGroupRequestProtocol defaultMetadata = protocolIterator.next();
-        assertEquals(WorkerCoordinator.DEFAULT_SUBPROTOCOL, defaultMetadata.name());
+        assertEquals(compatibility.protocol(), defaultMetadata.name());
         ConnectProtocol.WorkerState state = ConnectProtocol.deserializeMetadata(
                 ByteBuffer.wrap(defaultMetadata.metadata()));
         assertEquals(1, state.offset());

@@ -140,7 +140,8 @@ public class WorkerGroupMember {
                     retryBackoffMs,
                     restUrl,
                     configStorage,
-                    listener);
+                    listener,
+                    ConnectProtocolCompatibility.compatibility(config.getString(DistributedConfig.CONNECT_PROTOCOL_COMPATIBILITY)));
 
             AppInfoParser.registerAppInfo(JMX_PREFIX, clientId, metrics, time.milliseconds());
             log.debug("Connect group member created");
