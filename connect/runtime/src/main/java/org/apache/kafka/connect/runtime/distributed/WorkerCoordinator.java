@@ -43,6 +43,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
+import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
+
 /**
  * This class manages the coordination process with the Kafka group coordinator on the broker for managing assignments
  * to workers.
@@ -184,7 +188,9 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
     @Override
     protected void onJoinComplete(int generation, String memberId, String protocol, ByteBuffer memberAssignment) {
-        assignmentSnapshot = ConnectProtocol.deserializeAssignment(memberAssignment);
+        assignmentSnapshot = protocolCompatibility == COOP ?
+                IncrementalCooperativeConnectProtocol.deserializeAssignment(memberAssignment):
+                ConnectProtocol.deserializeAssignment(memberAssignment);
         // At this point we always consider ourselves to be a member of the cluster, even if there was an assignment
         // error (the leader couldn't make the assignment) or we are behind the config and cannot yet work on our assigned
         // tasks. It's the responsibility of the code driving this process to decide how to react (e.g. trying to get
@@ -304,9 +310,19 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
             List<ConnectorTaskId> tasks = taskAssignments.get(member);
             if (tasks == null)
                 tasks = Collections.emptyList();
-            ConnectProtocol.Assignment assignment = new ConnectProtocol.Assignment(error, leaderId, leaderUrl, maxOffset, connectors, tasks);
-            log.debug("Assignment: {} -> {}", member, assignment);
-            groupAssignment.put(member, ConnectProtocol.serializeAssignment(assignment));
+            ByteBuffer serializedAssignment;
+            if (protocolCompatibility == COOP) {
+                ExtendedAssignment assignment = new ExtendedAssignment(
+                        error, leaderId, leaderUrl, maxOffset, connectors, tasks,
+                        Collections.emptyList(), Collections.emptyList());
+                log.debug("Assignment: {} -> {}", member, assignment);
+                serializedAssignment = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
+            } else {
+                Assignment assignment = new Assignment(error, leaderId, leaderUrl, maxOffset, connectors, tasks);
+                log.debug("Assignment: {} -> {}", member, assignment);
+                serializedAssignment = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
+            }
+            groupAssignment.put(member, serializedAssignment);
         }
         log.debug("Finished assignment");
         return groupAssignment;
