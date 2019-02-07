@@ -59,6 +59,7 @@ import static org.junit.runners.Parameterized.Parameters;
 
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.WorkerState;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
 
@@ -217,6 +218,28 @@ public class WorkerCoordinatorIncrementalTest {
         assertEquals(compatibility.protocol(), defaultMetadata.name());
         WorkerState state = IncrementalCooperativeConnectProtocol.deserializeMetadata(defaultMetadata.metadata());
         assertEquals(1, state.offset());
+
+        PowerMock.verifyAll();
+    }
+
+    @Test
+    public void testMetadataWithCurrentAssignment() {
+        EasyMock.expect(configStorage.snapshot()).andReturn(configState1);
+
+        PowerMock.replayAll();
+
+        ExtendedAssignment assignment = new ExtendedAssignment(ExtendedAssignment.NO_ERROR, "member", "leader", 1L,
+                Collections.singletonList(connectorId1), Arrays.asList(taskId1x0, taskId2x0), null, null);
+        ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
+        coordinator.onJoinComplete(9, null, null, buf);
+        List<ProtocolMetadata> serialized = coordinator.metadata();
+        assertEquals(expectedMetadataSize, serialized.size());
+
+        ProtocolMetadata defaultMetadata = serialized.get(0);
+        assertEquals(compatibility.protocol(), defaultMetadata.name());
+        ExtendedWorkerState state = IncrementalCooperativeConnectProtocol.deserializeMetadata(defaultMetadata.metadata());
+        assertEquals(1, state.offset());
+        System.out.println(state);
 
         PowerMock.verifyAll();
     }
@@ -390,8 +413,8 @@ public class WorkerCoordinatorIncrementalTest {
 
         Map<String, ByteBuffer> configs = new HashMap<>();
         // Mark everyone as in sync with configState1
-        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(LEADER_URL, 1L)));
-        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(MEMBER_URL, 1L)));
+        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(LEADER_URL, 1L, null)));
+        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(MEMBER_URL, 1L, null)));
         Map<String, ByteBuffer> result = Whitebox.invokeMethod(coordinator, "performAssignment", "leader", WorkerCoordinator.DEFAULT_SUBPROTOCOL, configs);
 
         // configState1 has 1 connector, 1 task
@@ -426,8 +449,8 @@ public class WorkerCoordinatorIncrementalTest {
 
         Map<String, ByteBuffer> configs = new HashMap<>();
         // Mark everyone as in sync with configState1
-        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(LEADER_URL, 1L)));
-        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(MEMBER_URL, 1L)));
+        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(LEADER_URL, 1L, null)));
+        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(MEMBER_URL, 1L, null)));
         Map<String, ByteBuffer> result = Whitebox.invokeMethod(coordinator, "performAssignment", "leader", WorkerCoordinator.DEFAULT_SUBPROTOCOL, configs);
 
         // configState2 has 2 connector, 3 tasks and should trigger round robin assignment
@@ -462,8 +485,8 @@ public class WorkerCoordinatorIncrementalTest {
 
         Map<String, ByteBuffer> configs = new HashMap<>();
         // Mark everyone as in sync with configState1
-        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(LEADER_URL, 1L)));
-        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(MEMBER_URL, 1L)));
+        configs.put("leader", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(LEADER_URL, 1L, null)));
+        configs.put("member", IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(MEMBER_URL, 1L, null)));
         Map<String, ByteBuffer> result = Whitebox.invokeMethod(coordinator, "performAssignment", "leader", WorkerCoordinator.DEFAULT_SUBPROTOCOL, configs);
 
         // Round robin assignment when there are the same number of connectors and tasks should result in each being
@@ -497,7 +520,7 @@ public class WorkerCoordinatorIncrementalTest {
             // We need a member URL, but it doesn't matter for the purposes of this test. Just set it to the member ID
             String memberUrl = configStateEntry.getKey();
             long configOffset = configStateEntry.getValue();
-            ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeMetadata(new IncrementalCooperativeConnectProtocol.WorkerState(memberUrl, configOffset));
+            ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeMetadata(new ExtendedWorkerState(memberUrl, configOffset, null));
             metadata.put(configStateEntry.getKey(), buf);
         }
         return new JoinGroupResponse(error, generationId, WorkerCoordinator.DEFAULT_SUBPROTOCOL, memberId, memberId, metadata);
@@ -517,7 +540,7 @@ public class WorkerCoordinatorIncrementalTest {
     }
 
     private static class MockRebalanceListener implements WorkerRebalanceListener {
-        public IncrementalCooperativeConnectProtocol.Assignment assignment = null;
+        public ExtendedAssignment assignment = null;
 
         public String revokedLeader;
         public Collection<String> revokedConnectors;
@@ -527,8 +550,8 @@ public class WorkerCoordinatorIncrementalTest {
         public int assignedCount = 0;
 
         @Override
-        public void onAssigned(IncrementalCooperativeConnectProtocol.Assignment assignment, int generation) {
-            this.assignment = assignment;
+        public void onAssigned(Assignment assignment, int generation) {
+            this.assignment = (ExtendedAssignment) assignment;
             assignedCount++;
         }
 

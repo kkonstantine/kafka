@@ -32,6 +32,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -76,9 +78,10 @@ public class ConnectProtocolCompatibilityTest {
     @Test
     public void testNewToOldMetadata() {
         when(configStorage.snapshot()).thenReturn(configState1);
-        ConnectProtocol.WorkerState workerState = new ConnectProtocol.WorkerState(LEADER_URL, configStorage.snapshot().offset());
+        ExtendedWorkerState workerState = new ExtendedWorkerState(LEADER_URL, configStorage.snapshot().offset(), null);
         ByteBuffer metadata = IncrementalCooperativeConnectProtocol.serializeMetadata(workerState);
         ConnectProtocol.WorkerState state = ConnectProtocol.deserializeMetadata(metadata);
+        assertEquals(LEADER_URL, state.url());
         assertEquals(1, state.offset());
         verify(configStorage).snapshot();
     }
@@ -89,6 +92,7 @@ public class ConnectProtocolCompatibilityTest {
         ConnectProtocol.WorkerState workerState = new ConnectProtocol.WorkerState(LEADER_URL, configStorage.snapshot().offset());
         ByteBuffer metadata = ConnectProtocol.serializeMetadata(workerState);
         ConnectProtocol.WorkerState state = IncrementalCooperativeConnectProtocol.deserializeMetadata(metadata);
+        assertEquals(LEADER_URL, state.url());
         assertEquals(1, state.offset());
         verify(configStorage).snapshot();
     }
@@ -125,9 +129,9 @@ public class ConnectProtocolCompatibilityTest {
 
     @Test
     public void testNewToOldAssignment() {
-        ConnectProtocol.Assignment assignment = new ConnectProtocol.Assignment(
+        ExtendedAssignment assignment = new ExtendedAssignment(
                 ConnectProtocol.Assignment.NO_ERROR, "leader", LEADER_URL, 1L,
-                Arrays.asList(connectorId1, connectorId3), Arrays.asList(taskId2x0));
+                Arrays.asList(connectorId1, connectorId3), Arrays.asList(taskId2x0), null, null);
 
         ByteBuffer leaderBuf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
         ConnectProtocol.Assignment leaderAssignment = ConnectProtocol.deserializeAssignment(leaderBuf);
@@ -137,9 +141,9 @@ public class ConnectProtocolCompatibilityTest {
         assertEquals(Arrays.asList(connectorId1, connectorId3), leaderAssignment.connectors());
         assertEquals(Collections.singletonList(taskId2x0), leaderAssignment.tasks());
 
-        ConnectProtocol.Assignment assignment2 = new ConnectProtocol.Assignment(
+        ExtendedAssignment assignment2 = new ExtendedAssignment(
                 ConnectProtocol.Assignment.NO_ERROR, "member", LEADER_URL, 1L,
-                Arrays.asList(connectorId2), Arrays.asList(taskId1x0, taskId3x0));
+                Arrays.asList(connectorId2), Arrays.asList(taskId1x0, taskId3x0), null, null);
 
         ByteBuffer memberBuf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment2);
         ConnectProtocol.Assignment memberAssignment = ConnectProtocol.deserializeAssignment(memberBuf);

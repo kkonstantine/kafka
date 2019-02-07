@@ -45,6 +45,7 @@ import java.util.Optional;
 
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
 
 /**
@@ -58,7 +59,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     private final Logger log;
     private final String restUrl;
     private final ConfigBackingStore configStorage;
-    private ConnectProtocol.Assignment assignmentSnapshot;
+    private ExtendedAssignment assignmentSnapshot;
     private ClusterConfigState configSnapshot;
     private final WorkerRebalanceListener listener;
     private final ConnectProtocolCompatibility protocolCompatibility;
@@ -156,7 +157,8 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     @Override
     public JoinGroupRequestData.JoinGroupRequestProtocolSet metadata() {
         configSnapshot = configStorage.snapshot();
-        ConnectProtocol.WorkerState workerState = new ConnectProtocol.WorkerState(restUrl, configSnapshot.offset());
+        ExtendedWorkerState workerState = new ExtendedWorkerState(
+                restUrl, configSnapshot.offset(), assignmentSnapshot);
         ByteBuffer metadata;
         switch (protocolCompatibility) {
             case STRICT:
@@ -190,7 +192,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     protected void onJoinComplete(int generation, String memberId, String protocol, ByteBuffer memberAssignment) {
         assignmentSnapshot = protocolCompatibility == COOP ?
                 IncrementalCooperativeConnectProtocol.deserializeAssignment(memberAssignment):
-                ConnectProtocol.deserializeAssignment(memberAssignment);
+                new ExtendedAssignment(ConnectProtocol.deserializeAssignment(memberAssignment), null, null);
         // At this point we always consider ourselves to be a member of the cluster, even if there was an assignment
         // error (the leader couldn't make the assignment) or we are behind the config and cannot yet work on our assigned
         // tasks. It's the responsibility of the code driving this process to decide how to react (e.g. trying to get
@@ -320,7 +322,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
             } else {
                 Assignment assignment = new Assignment(error, leaderId, leaderUrl, maxOffset, connectors, tasks);
                 log.debug("Assignment: {} -> {}", member, assignment);
-                serializedAssignment = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
+                serializedAssignment = ConnectProtocol.serializeAssignment(assignment);
             }
             groupAssignment.put(member, serializedAssignment);
         }
