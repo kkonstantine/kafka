@@ -77,7 +77,7 @@ public class ConnectAssignor {
             Map<String, ExtendedAssignment> assignments =
                     fillAssignments(memberConfigs.keySet(), Assignment.CONFIG_MISMATCH,
                     leaderId, memberConfigs.get(leaderId).url(), maxOffset, Collections.emptyMap(),
-                    Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap());
+                    Collections.emptyMap(), Collections.emptyMap());
             return serializeAssignments(assignments);
         }
         return performTaskAssignment(leaderId, leaderOffset, memberConfigs, configSnapshot, leaderState);
@@ -113,6 +113,11 @@ public class ConnectAssignor {
         ConnectorsAndTasks lostAssignments = diff(previousAssignment, activeAssignments);
         log.debug("Lost assignments: {}", lostAssignments);
 
+        List<WorkerLoad> completeWorkerAssignment = workerAssignment(memberConfigs, true);
+
+        Map<String, ConnectorsAndTasks> toRevoke = performTaskRevocation(activeAssignments, completeWorkerAssignment);
+        log.debug("Connectors and tasks to revoke: {}", toRevoke);
+
         Set<String> configuredConnectors = new TreeSet<>(configSnapshot.get().connectors());
         Set<ConnectorTaskId> configuredTasks = configuredConnectors.stream()
                 .flatMap(c -> configSnapshot.get().tasks(c).stream())
@@ -123,21 +128,18 @@ public class ConnectAssignor {
         ConnectorsAndTasks newSubmissions = diff(configured, previousAssignment);
         log.debug("New assignments: {}", newSubmissions);
 
-        List<WorkerLoad> completeWorkerAssignment = workerAssignment(memberConfigs, true);
-        List<WorkerLoad> incrementalWorkerAssignment = workerAssignment(memberConfigs, false);
+        List<WorkerLoad> currentWorkerAssignment = workerAssignment(memberConfigs, true);
 
         if (!lostAssignments.isEmpty()) {
             log.debug("Found the following connectors and tasks missing from previous assignment: "
                       + lostAssignments);
         } else {
             assignConnectors(completeWorkerAssignment, newSubmissions.connectors(), log);
-            assignConnectors(incrementalWorkerAssignment, newSubmissions.connectors(), log);
             assignTasks(completeWorkerAssignment, newSubmissions.tasks(), log);
-            assignTasks(incrementalWorkerAssignment, newSubmissions.tasks(), log);
         }
 
-        log.debug("Complete assignments: {}", completeWorkerAssignment);
-        log.debug("Incremental assignments: {}", incrementalWorkerAssignment);
+        log.debug("Complete assignments: {}", currentWorkerAssignment);
+        log.debug("New complete assignments: {}", completeWorkerAssignment);
 
         Map<String, Collection<String>> connectorAssignments =
                 completeWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::connectors));
@@ -145,42 +147,121 @@ public class ConnectAssignor {
         Map<String, Collection<ConnectorTaskId>> taskAssignments =
                 completeWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::tasks));
 
+        Map<String, Collection<String>> currentConnectorAssignments =
+                currentWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::connectors));
+
+        Map<String, Collection<ConnectorTaskId>> currentTaskAssignments =
+                currentWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::tasks));
+
         Map<String, Collection<String>> incrementalConnectorAssignments =
-                incrementalWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::connectors));
+                diff(connectorAssignments, currentConnectorAssignments);
 
         Map<String, Collection<ConnectorTaskId>> incrementalTaskAssignments =
-                incrementalWorkerAssignment.stream().collect(Collectors.toMap(WorkerLoad::worker, WorkerLoad::tasks));
+                diff(taskAssignments, currentTaskAssignments);
 
-        log.debug("Exact Incremental Connector assignments: {}", incrementalConnectorAssignments);
-        log.debug("Exact Incremental Task assignments: {}", incrementalTaskAssignments);
+        log.debug("Incremental Connector assignments: {}", incrementalConnectorAssignments);
+        log.debug("Incremental Task assignments: {}", incrementalTaskAssignments);
 
         leaderState.set(new LeaderState(memberConfigs, connectorAssignments, taskAssignments));
 
         Map<String, ExtendedAssignment> assignments =
                 fillAssignments(memberConfigs.keySet(), Assignment.NO_ERROR, leaderId,
                                 memberConfigs.get(leaderId).url(), maxOffset, incrementalConnectorAssignments,
-                                incrementalTaskAssignments, Collections.emptyMap(), Collections.emptyMap());
+                                incrementalTaskAssignments, toRevoke);
 
         previousAssignment = ConnectorsAndTasks.embed(
                 connectorAssignments.values().stream().flatMap(Collection::stream).collect(Collectors.toList()),
                 taskAssignments.values().stream().flatMap(Collection::stream).collect(Collectors.toList()));
 
+        for (ConnectorsAndTasks revoked : toRevoke.values()) {
+            previousAssignment.connectors().removeAll(revoked.connectors());
+            previousAssignment.tasks().removeAll(revoked.tasks());
+        }
+
         log.debug("Actual assignments: {}", assignments);
         return serializeAssignments(assignments);
+    }
+
+
+    private Map<String, ConnectorsAndTasks> performTaskRevocation(ConnectorsAndTasks activeAssignments,
+                                                                  Collection<WorkerLoad> completeWorkerAssignment) {
+        int totalActiveConnectorsNum = activeAssignments.connectors().size();
+        int totalActiveTasksNum = activeAssignments.tasks().size();
+        Collection<WorkerLoad> existingWorkers = completeWorkerAssignment.stream()
+                .filter(wl -> wl.size() > 0)
+                .collect(Collectors.toList());
+        int existingWorkersNum = existingWorkers.size();
+        int totalWorkersNum = completeWorkerAssignment.size();
+        int newWorkersNum = totalWorkersNum - existingWorkersNum;
+
+        if (!(newWorkersNum > 0 && existingWorkersNum > 0)) {
+            log.debug("Business as usual existing {} new {} total {}", existingWorkersNum,
+                    newWorkersNum, totalWorkersNum
+            );
+            completeWorkerAssignment.stream()
+                    .forEachOrdered(wl -> log.debug("Current plan worker {} connectors {} tasks {}",
+                            wl.worker(),
+                            wl.connectorsSize(),
+                            wl.tasksSize()));
+            return Collections.emptyMap();
+        }
+
+        log.debug("Yay!!! Fresh new workers {} with {} existing for a total of {}",
+                newWorkersNum, existingWorkersNum, totalWorkersNum);
+
+        int floorConnectors = totalActiveConnectorsNum / totalWorkersNum;
+        int floorTasks = totalActiveTasksNum / totalWorkersNum;
+
+        log.debug("Old connectors per worker {}", totalActiveConnectorsNum / existingWorkersNum);
+        log.debug("New connectors per worker {}", totalActiveConnectorsNum / totalWorkersNum);
+        log.debug("Old tasks per worker {}", totalActiveTasksNum / existingWorkersNum);
+        log.debug("New tasks per worker {}", totalActiveTasksNum / totalWorkersNum);
+
+        Map<String, ConnectorsAndTasks> revoking = new HashMap<>();
+        int numToRevoke = floorConnectors;
+        for (WorkerLoad existing : existingWorkers) {
+            Iterator<String> connectors = existing.connectors().iterator();
+            for (int i = existing.connectorsSize(); i > floorConnectors && numToRevoke > 0; --i, --numToRevoke) {
+                ConnectorsAndTasks resources = revoking.computeIfAbsent(
+                    existing.worker(),
+                    w -> ConnectorsAndTasks.embed(new ArrayList<>(), new ArrayList<>()));
+                resources.connectors().add(connectors.next());
+            }
+            if (numToRevoke == 0) {
+                break;
+            }
+        }
+
+        numToRevoke = floorTasks;
+        for (WorkerLoad existing : existingWorkers) {
+            Iterator<ConnectorTaskId> tasks = existing.tasks().iterator();
+            for (int i = existing.tasksSize(); i > floorTasks && numToRevoke > 0; --i, --numToRevoke) {
+                ConnectorsAndTasks resources = revoking.computeIfAbsent(
+                    existing.worker(),
+                    w -> ConnectorsAndTasks.embed(new ArrayList<>(), new ArrayList<>()));
+                resources.tasks().add(tasks.next());
+            }
+            if (numToRevoke == 0) {
+                break;
+            }
+        }
+
+        completeWorkerAssignment.stream().forEachOrdered(wl -> log.debug("Old plan worker {} "
+                + "connectors {} tasks {}", wl.worker(), wl.connectorsSize(), wl.tasksSize()));
+        return revoking;
     }
 
     private Map<String, ExtendedAssignment> fillAssignments(Collection<String> members, short error,
                                                             String leaderId, String leaderUrl, long maxOffset,
                                                             Map<String, Collection<String>> connectorAssignments,
                                                             Map<String, Collection<ConnectorTaskId>> taskAssignments,
-                                                            Map<String, Collection<String>> revokedConnectors,
-                                                            Map<String, Collection<ConnectorTaskId>> revokedTasks) {
+                                                            Map<String, ConnectorsAndTasks> revoked) {
         Map<String, ExtendedAssignment> groupAssignment = new HashMap<>();
         for (String member : members) {
             Collection<String> connectorsToStart = connectorAssignments.getOrDefault(member, Collections.emptyList());
-            Collection<String> connectorsToStop = revokedConnectors.getOrDefault(member, Collections.emptyList());
             Collection<ConnectorTaskId> tasksToStart = taskAssignments.getOrDefault(member, Collections.emptyList());
-            Collection<ConnectorTaskId> tasksToStop = revokedTasks.getOrDefault(member, Collections.emptyList());
+            Collection<String> connectorsToStop = revoked.getOrDefault(member, ConnectorsAndTasks.EMPTY).connectors();
+            Collection<ConnectorTaskId> tasksToStop = revoked.getOrDefault(member, ConnectorsAndTasks.EMPTY).tasks();
             ExtendedAssignment assignment =
                     new ExtendedAssignment(error, leaderId, leaderUrl, maxOffset, connectorsToStart,
                                            tasksToStart, connectorsToStop, tasksToStop);
@@ -207,7 +288,19 @@ public class ConnectAssignor {
         return ConnectorsAndTasks.embed(connectors, tasks);
     }
 
-    private static ConnectorsAndTasks assignment(Map<String, ExtendedWorkerState> memberConfigs) {
+    private static <T> Map<String, Collection<T>> diff(Map<String, Collection<T>> base,
+                                                       Map<String, Collection<T>> toSubtract) {
+        Map<String, Collection<T>> incremental = new HashMap<>();
+        for (Map.Entry<String, Collection<T>> entry : base.entrySet()) {
+            List<T> values = new ArrayList<>(entry.getValue());
+            values.removeAll(toSubtract.get(entry.getKey()));
+            incremental.put(entry.getKey(), values);
+        }
+        return incremental;
+    }
+
+    private ConnectorsAndTasks assignment(Map<String, ExtendedWorkerState> memberConfigs) {
+        log.debug("Received assignments: {}", memberConfigs);
         Set<String> connectors = memberConfigs.values()
                 .stream()
                 .flatMap(state -> state.assignment().connectors().stream())
@@ -219,9 +312,9 @@ public class ConnectAssignor {
         return ConnectorsAndTasks.embed(connectors, tasks);
     }
 
-    private static void assignConnectors(List<WorkerLoad> workerAssignment,
-                                         Collection<String> connectors,
-                                         Logger log) {
+    protected static void assignConnectors(List<WorkerLoad> workerAssignment,
+                                           Collection<String> connectors,
+                                           Logger log) {
         workerAssignment.sort(WorkerLoad.connectorComparator());
         WorkerLoad first = workerAssignment.get(0);
 
@@ -231,7 +324,7 @@ public class ConnectAssignor {
             int upTo = IntStream.range(0, workerAssignment.size())
                     .filter(i -> workerAssignment.get(i).connectorsSize() > firstLoad)
                     .findFirst()
-                    .orElse(workerAssignment.size() - 1) + 1;
+                    .orElse(workerAssignment.size());
             for (WorkerLoad worker : workerAssignment.subList(0, upTo)) {
                 String connector = load.next();
                 log.debug("Assigning connector {} to {}", connector, worker.worker());
@@ -243,9 +336,9 @@ public class ConnectAssignor {
         }
     }
 
-    private static void assignTasks(List<WorkerLoad> workerAssignment,
-                                    Collection<ConnectorTaskId> tasks,
-                                    Logger log) {
+    protected static void assignTasks(List<WorkerLoad> workerAssignment,
+                                      Collection<ConnectorTaskId> tasks,
+                                      Logger log) {
         workerAssignment.sort(WorkerLoad.taskComparator());
         WorkerLoad first = workerAssignment.get(0);
 
@@ -255,7 +348,7 @@ public class ConnectAssignor {
             int upTo = IntStream.range(0, workerAssignment.size())
                     .filter(i -> workerAssignment.get(i).tasksSize() > firstLoad)
                     .findFirst()
-                    .orElse(workerAssignment.size() - 1) + 1;
+                    .orElse(workerAssignment.size());
             for (WorkerLoad worker : workerAssignment.subList(0, upTo)) {
                 ConnectorTaskId task = load.next();
                 log.debug("Assigning task {} to {}", task, worker.worker());
@@ -266,6 +359,7 @@ public class ConnectAssignor {
             }
         }
     }
+
     private static List<WorkerLoad> workerAssignment(Map<String, ExtendedWorkerState> memberConfigs, boolean complete) {
         return memberConfigs.entrySet()
                 .stream()
@@ -275,4 +369,5 @@ public class ConnectAssignor {
                         complete ? e.getValue().assignment().tasks() : new ArrayList<>()))
                 .collect(Collectors.toList());
     }
+
 }

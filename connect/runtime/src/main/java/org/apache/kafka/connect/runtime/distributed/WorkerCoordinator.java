@@ -42,6 +42,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -205,14 +206,20 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         // tasks. It's the responsibility of the code driving this process to decide how to react (e.g. trying to get
         // up to date, try to rejoin again, leaving the group and backing off, etc.).
         rejoinRequested = false;
-        //TODO: don't call on empty revoked connectors and tasks
-        listener.onRevoked(newAssignment.leader(), newAssignment.revokedConnectors(),
-                           newAssignment.revokedTasks());
-        if (assignmentSnapshot != null) {
-            assignmentSnapshot.connectors().removeAll(newAssignment.revokedConnectors());
-            assignmentSnapshot.tasks().removeAll(newAssignment.revokedTasks());
-            newAssignment.connectors().addAll(assignmentSnapshot.connectors());
-            newAssignment.tasks().addAll(assignmentSnapshot.tasks());
+        if (!newAssignment.revokedConnectors().isEmpty() || !newAssignment.revokedTasks().isEmpty()) {
+            listener.onRevoked(newAssignment.leader(), newAssignment.revokedConnectors(), newAssignment.revokedTasks());
+        }
+
+        log.debug("Deserialized new assignment: {}", newAssignment);
+        if (protocolCompatibility == COOP) {
+            if (assignmentSnapshot != null) {
+                assignmentSnapshot.connectors().removeAll(newAssignment.revokedConnectors());
+                assignmentSnapshot.tasks().removeAll(newAssignment.revokedTasks());
+                log.debug("Snapshot after delete assignment: {}", assignmentSnapshot);
+                newAssignment.connectors().addAll(assignmentSnapshot.connectors());
+                newAssignment.tasks().addAll(assignmentSnapshot.tasks());
+            }
+            log.debug("Augmented new assignment: {}", newAssignment);
         }
         assignmentSnapshot = newAssignment;
         listener.onAssigned(assignmentSnapshot, generation);
@@ -516,6 +523,25 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         private final Collection<String> connectors;
         private final Collection<ConnectorTaskId> tasks;
 
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof WorkerLoad)) {
+                return false;
+            }
+            WorkerLoad that = (WorkerLoad) o;
+            return worker.equals(that.worker) &&
+                    connectors.equals(that.connectors) &&
+                    tasks.equals(that.tasks);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(worker, connectors, tasks);
+        }
+
         private WorkerLoad(
                 String worker,
                 Collection<String> connectors,
@@ -598,7 +624,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
         @Override
         public String toString() {
-            return "{ connectorIds=" + connectors + ", taskIds=" + tasks + '}';
+            return "{ worker=" + worker + ", connectorIds=" + connectors + ", taskIds=" + tasks + '}';
         }
     }
 
