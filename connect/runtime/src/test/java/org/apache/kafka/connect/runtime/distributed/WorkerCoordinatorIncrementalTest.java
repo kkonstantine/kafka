@@ -229,7 +229,8 @@ public class WorkerCoordinatorIncrementalTest {
         PowerMock.replayAll();
 
         ExtendedAssignment assignment = new ExtendedAssignment(ExtendedAssignment.NO_ERROR, "member", "leader", 1L,
-                Collections.singletonList(connectorId1), Arrays.asList(taskId1x0, taskId2x0), null, null);
+                Collections.singletonList(connectorId1), Arrays.asList(taskId1x0, taskId2x0),
+                Collections.emptyList(), Collections.emptyList());
         ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
         coordinator.onJoinComplete(9, null, null, buf);
         List<ProtocolMetadata> serialized = coordinator.metadata();
@@ -305,8 +306,9 @@ public class WorkerCoordinatorIncrementalTest {
                         sync.generationId() == 1 &&
                         sync.groupAssignment().isEmpty();
             }
-        }, syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader" , 1L,
-                Collections.emptyList(), Collections.singletonList(taskId1x0), Errors.NONE));
+        }, syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+                Collections.emptyList(), Collections.singletonList(taskId1x0), Errors.NONE
+        ));
         coordinator.ensureActiveGroup();
 
         assertFalse(coordinator.rejoinNeededOrPending());
@@ -557,6 +559,9 @@ public class WorkerCoordinatorIncrementalTest {
 
         @Override
         public void onRevoked(String leader, Collection<String> connectors, Collection<ConnectorTaskId> tasks) {
+            if (connectors.isEmpty() && tasks.isEmpty()) {
+                return;
+            }
             this.revokedLeader = leader;
             this.revokedConnectors = connectors;
             this.revokedTasks = tasks;

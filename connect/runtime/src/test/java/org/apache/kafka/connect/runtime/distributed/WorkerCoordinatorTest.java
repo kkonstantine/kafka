@@ -44,6 +44,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.powermock.api.easymock.PowerMock;
+import org.powermock.modules.junit4.PowerMockRunner;
+import org.powermock.modules.junit4.PowerMockRunnerDelegate;
 import org.powermock.reflect.Whitebox;
 
 import java.nio.ByteBuffer;
@@ -62,7 +64,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.runners.Parameterized.Parameter;
 import static org.junit.runners.Parameterized.Parameters;
 
-@RunWith(value = Parameterized.class)
+@RunWith(PowerMockRunner.class)
+@PowerMockRunnerDelegate(Parameterized.class)
 public class WorkerCoordinatorTest {
 
     private static final String LEADER_URL = "leaderUrl:8083";
@@ -102,8 +105,7 @@ public class WorkerCoordinatorTest {
     public static Iterable<?> mode() {
         return Arrays.asList(new Object[][]{
                 {ConnectProtocolCompatibility.STRICT, 1},
-                {ConnectProtocolCompatibility.COMPAT, 2},
-                {ConnectProtocolCompatibility.COOP, 1}});
+                {ConnectProtocolCompatibility.COMPAT, 2}});
     }
 
     @Parameter
@@ -570,6 +572,9 @@ public class WorkerCoordinatorTest {
 
         @Override
         public void onRevoked(String leader, Collection<String> connectors, Collection<ConnectorTaskId> tasks) {
+            if (connectors.isEmpty() && tasks.isEmpty()) {
+                return;
+            }
             this.revokedLeader = leader;
             this.revokedConnectors = connectors;
             this.revokedTasks = tasks;
