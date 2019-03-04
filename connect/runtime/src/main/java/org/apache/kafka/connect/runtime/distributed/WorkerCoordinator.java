@@ -44,9 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 
-import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
@@ -63,10 +61,10 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     private final String restUrl;
     private final ConfigBackingStore configStorage;
     private ExtendedAssignment assignmentSnapshot;
-    private AtomicReference<ClusterConfigState> configSnapshot;
+    private ClusterConfigState configSnapshot;
     private final WorkerRebalanceListener listener;
     private final ConnectProtocolCompatibility protocolCompatibility;
-    private AtomicReference<LeaderState> leaderState;
+    private LeaderState leaderState;
 
     private boolean rejoinRequested;
     private final ConnectAssignor assignor;
@@ -102,14 +100,14 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         this.log = logContext.logger(WorkerCoordinator.class);
         this.restUrl = restUrl;
         this.configStorage = configStorage;
-        this.configSnapshot = new AtomicReference<>();
-        this.leaderState = new AtomicReference<>();
         this.assignmentSnapshot = null;
         new WorkerCoordinatorMetrics(metrics, metricGrpPrefix);
         this.listener = listener;
         this.rejoinRequested = false;
         this.protocolCompatibility = protocolCompatibility;
-        this.assignor = new ConnectAssignor(logContext);
+        this.assignor = protocolCompatibility == COOP
+                        ? new IncrementalCooperativeAssignor(logContext)
+                        : new StrictAssignor(logContext);
     }
 
     @Override
@@ -163,8 +161,8 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
     @Override
     public JoinGroupRequestData.JoinGroupRequestProtocolSet metadata() {
-        configSnapshot.set(configStorage.snapshot());
-        ExtendedWorkerState workerState = new ExtendedWorkerState(restUrl, configSnapshot.get().offset(), assignmentSnapshot);
+        configSnapshot = configStorage.snapshot();
+        ExtendedWorkerState workerState = new ExtendedWorkerState(restUrl, configSnapshot.offset(), assignmentSnapshot);
         ByteBuffer metadata;
         switch (protocolCompatibility) {
             case STRICT:
@@ -227,141 +225,13 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId, String protocol, List<JoinGroupResponseData.JoinGroupResponseMember> allMemberMetadata) {
-        if (protocolCompatibility == COOP) {
-            return assignor.performAssignment(leaderId, protocol, allMemberMetadata,
-                    configSnapshot, configStorage, leaderState);
-        }
-        log.debug("Performing task assignment");
-
-        Map<String, ExtendedWorkerState> memberConfigs = new HashMap<>();
-        for (JoinGroupResponseData.JoinGroupResponseMember memberMetadata : allMemberMetadata)
-            memberConfigs.put(memberMetadata.memberId(), IncrementalCooperativeConnectProtocol.deserializeMetadata(ByteBuffer.wrap(memberMetadata.metadata())));
-
-        long maxOffset = findMaxMemberConfigOffset(memberConfigs);
-        Long leaderOffset = ensureLeaderConfig(maxOffset);
-        if (leaderOffset == null)
-            return fillAssignmentsAndSerialize(memberConfigs.keySet(), Assignment.CONFIG_MISMATCH,
-                    leaderId, memberConfigs.get(leaderId).url(), maxOffset,
-                    new HashMap<>(), new HashMap<>());
-        return performTaskAssignment(leaderId, leaderOffset, memberConfigs);
-    }
-
-    private long findMaxMemberConfigOffset(Map<String, ExtendedWorkerState> memberConfigs) {
-        // The new config offset is the maximum seen by any member. We always perform assignment using this offset,
-        // even if some members have fallen behind. The config offset used to generate the assignment is included in
-        // the response so members that have fallen behind will not use the assignment until they have caught up.
-        Long maxOffset = null;
-        for (Map.Entry<String, ExtendedWorkerState> stateEntry : memberConfigs.entrySet()) {
-            long memberRootOffset = stateEntry.getValue().offset();
-            if (maxOffset == null)
-                maxOffset = memberRootOffset;
-            else
-                maxOffset = Math.max(maxOffset, memberRootOffset);
-        }
-
-        log.debug("Max config offset root: {}, local snapshot config offsets root: {}",
-                  maxOffset, configSnapshot.get().offset());
-        return maxOffset;
-    }
-
-    private Long ensureLeaderConfig(long maxOffset) {
-        // If this leader is behind some other members, we can't do assignment
-        if (configSnapshot.get().offset() < maxOffset) {
-            // We might be able to take a new snapshot to catch up immediately and avoid another round of syncing here.
-            // Alternatively, if this node has already passed the maximum reported by any other member of the group, it
-            // is also safe to use this newer state.
-            ClusterConfigState updatedSnapshot = configStorage.snapshot();
-            if (updatedSnapshot.offset() < maxOffset) {
-                log.info("Was selected to perform assignments, but do not have latest config found in sync request. " +
-                        "Returning an empty configuration to trigger re-sync.");
-                return null;
-            } else {
-                configSnapshot.set(updatedSnapshot);
-                return configSnapshot.get().offset();
-            }
-        }
-
-        return maxOffset;
-    }
-
-    private Map<String, ByteBuffer> performTaskAssignment(String leaderId, long maxOffset, Map<String, ExtendedWorkerState> memberConfigs) {
-        Map<String, Collection<String>> connectorAssignments = new HashMap<>();
-        Map<String, Collection<ConnectorTaskId>> taskAssignments = new HashMap<>();
-
-        // Perform round-robin task assignment. Assign all connectors and then all tasks because assigning both the
-        // connector and its tasks can lead to very uneven distribution of work in some common cases (e.g. for connectors
-        // that generate only 1 task each; in a cluster of 2 or an even # of nodes, only even nodes will be assigned
-        // connectors and only odd nodes will be assigned tasks, but tasks are, on average, actually more resource
-        // intensive than connectors).
-        List<String> connectorsSorted = sorted(configSnapshot.get().connectors());
-        CircularIterator<String> memberIt = new CircularIterator<>(sorted(memberConfigs.keySet()));
-        for (String connectorId : connectorsSorted) {
-            String connectorAssignedTo = memberIt.next();
-            log.trace("Assigning connector {} to {}", connectorId, connectorAssignedTo);
-            Collection<String> memberConnectors = connectorAssignments.get(connectorAssignedTo);
-            if (memberConnectors == null) {
-                memberConnectors = new ArrayList<>();
-                connectorAssignments.put(connectorAssignedTo, memberConnectors);
-            }
-            memberConnectors.add(connectorId);
-        }
-        for (String connectorId : connectorsSorted) {
-            for (ConnectorTaskId taskId : sorted(configSnapshot.get().tasks(connectorId))) {
-                String taskAssignedTo = memberIt.next();
-                log.trace("Assigning task {} to {}", taskId, taskAssignedTo);
-                Collection<ConnectorTaskId> memberTasks = taskAssignments.get(taskAssignedTo);
-                if (memberTasks == null) {
-                    memberTasks = new ArrayList<>();
-                    taskAssignments.put(taskAssignedTo, memberTasks);
-                }
-                memberTasks.add(taskId);
-            }
-        }
-
-        leaderState.set(new LeaderState(memberConfigs, connectorAssignments, taskAssignments));
-
-        return fillAssignmentsAndSerialize(memberConfigs.keySet(), Assignment.NO_ERROR,
-                leaderId, memberConfigs.get(leaderId).url(), maxOffset, connectorAssignments, taskAssignments);
-    }
-
-    private Map<String, ByteBuffer> fillAssignmentsAndSerialize(Collection<String> members,
-                                                                short error,
-                                                                String leaderId,
-                                                                String leaderUrl,
-                                                                long maxOffset,
-                                                                Map<String, Collection<String>> connectorAssignments,
-                                                                Map<String, Collection<ConnectorTaskId>> taskAssignments) {
-
-        Map<String, ByteBuffer> groupAssignment = new HashMap<>();
-        for (String member : members) {
-            Collection<String> connectors = connectorAssignments.get(member);
-            if (connectors == null)
-                connectors = Collections.emptyList();
-            Collection<ConnectorTaskId> tasks = taskAssignments.get(member);
-            if (tasks == null)
-                tasks = Collections.emptyList();
-            ByteBuffer serializedAssignment;
-            if (protocolCompatibility == COOP) {
-                ExtendedAssignment assignment = new ExtendedAssignment(
-                        error, leaderId, leaderUrl, maxOffset, connectors, tasks,
-                        Collections.emptyList(), Collections.emptyList());
-                log.debug("Assignment: {} -> {}", member, assignment);
-                serializedAssignment = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
-            } else {
-                Assignment assignment = new Assignment(error, leaderId, leaderUrl, maxOffset, connectors, tasks);
-                log.debug("Assignment: {} -> {}", member, assignment);
-                serializedAssignment = ConnectProtocol.serializeAssignment(assignment);
-            }
-            groupAssignment.put(member, serializedAssignment);
-        }
-        log.debug("Finished assignment");
-        return groupAssignment;
+        return assignor.performAssignment(leaderId, protocol, allMemberMetadata, this);
     }
 
     @Override
     protected void onJoinPrepare(int generation, String memberId) {
         log.info("Rebalance started");
-        leaderState.set(null);
+        leaderState(null);
         if (protocolCompatibility == COOP) {
             log.debug("Cooperative rebalance triggered. Keeping assignment {} until it's "
                       + "explicitly revoked.", assignmentSnapshot);
@@ -391,13 +261,58 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     public String ownerUrl(String connector) {
         if (rejoinNeededOrPending() || !isLeader())
             return null;
-        return leaderState.get().ownerUrl(connector);
+        return leaderState().ownerUrl(connector);
     }
 
     public String ownerUrl(ConnectorTaskId task) {
         if (rejoinNeededOrPending() || !isLeader())
             return null;
-        return leaderState.get().ownerUrl(task);
+        return leaderState().ownerUrl(task);
+    }
+
+    /**
+     * Get an up-to-date snapshot of the cluster configuration.
+     *
+     * @return the state of the cluster configuration; the result is not locally cached
+     */
+    public ClusterConfigState configFreshSnapshot() {
+        return configStorage.snapshot();
+    }
+
+    /**
+     * Get a snapshot of the cluster configuration.
+     *
+     * @return the state of the cluster configuration
+     */
+    public ClusterConfigState configSnapshot() {
+        return configSnapshot;
+    }
+
+    /**
+     * Set the state of the cluster configuration to this worker coordinator.
+     *
+     * @param update the updated state of the cluster configuration
+     */
+    public void configSnapshot(ClusterConfigState update) {
+        configSnapshot = update;
+    }
+
+    /**
+     * Get the leader state stored in this worker coordinator.
+     *
+     * @return the leader state
+     */
+    public LeaderState leaderState() {
+        return leaderState;
+    }
+
+    /**
+     * Store the leader state to this worker coordinator.
+     *
+     * @param update the updated leader state
+     */
+    public void leaderState(LeaderState update) {
+        leaderState = update;
     }
 
     private class WorkerCoordinatorMetrics {
@@ -427,12 +342,6 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
                               this.metricGrpName,
                               "The number of tasks currently assigned to this consumer"), numTasks);
         }
-    }
-
-    private static <T extends Comparable<T>> List<T> sorted(Collection<T> members) {
-        List<T> res = new ArrayList<>(members);
-        Collections.sort(res);
-        return res;
     }
 
     private static <K, V> Map<V, K> invertAssignment(Map<K, Collection<V>> assignment) {
@@ -519,28 +428,9 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
 
     public static class WorkerLoad {
-        private String worker;
+        private final String worker;
         private final Collection<String> connectors;
         private final Collection<ConnectorTaskId> tasks;
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (!(o instanceof WorkerLoad)) {
-                return false;
-            }
-            WorkerLoad that = (WorkerLoad) o;
-            return worker.equals(that.worker) &&
-                    connectors.equals(that.connectors) &&
-                    tasks.equals(that.tasks);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(worker, connectors, tasks);
-        }
 
         private WorkerLoad(
                 String worker,
@@ -625,6 +515,25 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         @Override
         public String toString() {
             return "{ worker=" + worker + ", connectorIds=" + connectors + ", taskIds=" + tasks + '}';
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof WorkerLoad)) {
+                return false;
+            }
+            WorkerLoad that = (WorkerLoad) o;
+            return worker.equals(that.worker) &&
+                    connectors.equals(that.connectors) &&
+                    tasks.equals(that.tasks);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(worker, connectors, tasks);
         }
     }
 
