@@ -101,8 +101,8 @@ public class WorkerCoordinatorTest {
     @Parameters
     public static Iterable<?> mode() {
         return Arrays.asList(new Object[][]{
-                {ConnectProtocolCompatibility.STRICT, 1},
-                {ConnectProtocolCompatibility.COMPAT, 2}});
+                {ConnectProtocolCompatibility.EAGER, 1},
+                {ConnectProtocolCompatibility.COMPATIBLE, 2}});
     }
 
     @Parameter

@@ -215,7 +215,7 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
         canReadConfigs = true; // We didn't try yet, but Configs are readable until proven otherwise
 
         protocolCompatibility = ConnectProtocolCompatibility.compatibility(
-                config.getString(DistributedConfig.CONNECT_PROTOCOL_COMPATIBILITY));
+                config.getString(DistributedConfig.CONNECT_PROTOCOL_CONFIG));
     }
 
     @Override
@@ -882,7 +882,7 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
             callables.add(getTaskStartingCallable(taskId));
         }
         startAndStop(callables);
-        runningAssignment = protocolCompatibility == ConnectProtocolCompatibility.COOP
+        runningAssignment = protocolCompatibility == ConnectProtocolCompatibility.COOPERATIVE
                             ? assignment
                             : ExtendedAssignment.empty();
 

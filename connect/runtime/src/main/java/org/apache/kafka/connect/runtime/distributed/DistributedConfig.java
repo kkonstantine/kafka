@@ -130,11 +130,10 @@ public class DistributedConfig extends WorkerConfig {
      * <code>status.storage.replication.factor</code>
      */
     public static final String STATUS_STORAGE_REPLICATION_FACTOR_CONFIG = "status.storage.replication.factor";
+    public static final String CONNECT_PROTOCOL_CONFIG = "connect.protocol";
+    public static final String CONNECT_PROTOCOL_DOC = "Compatibility mode for Kafka Connect Protocol";
+    public static final String CONNECT_PROTOCOL_DEFAULT = ConnectProtocolCompatibility.EAGER.toString();
     private static final String STATUS_STORAGE_REPLICATION_FACTOR_CONFIG_DOC = "Replication factor used when creating the status storage topic";
-
-    public static final String CONNECT_PROTOCOL_COMPATIBILITY = "connect.protocol.compatibility";
-    public static final String CONNECT_PROTOCOL_COMPATIBILITY_DOC = "Compatibility mode for Kafka Connect's Protocol";
-    public static final String CONNECT_PROTOCOL_COMPATIBILITY_DEFAULT = ConnectProtocolCompatibility.STRICT.toString();
 
     static {
         CONFIG = baseConfigDef()
@@ -270,11 +269,11 @@ public class DistributedConfig extends WorkerConfig {
                         atLeast(1),
                         ConfigDef.Importance.LOW,
                         STATUS_STORAGE_REPLICATION_FACTOR_CONFIG_DOC)
-                .define(CONNECT_PROTOCOL_COMPATIBILITY,
+                .define(CONNECT_PROTOCOL_CONFIG,
                         ConfigDef.Type.STRING,
-                        CONNECT_PROTOCOL_COMPATIBILITY_DEFAULT,
+                        CONNECT_PROTOCOL_DEFAULT,
                         ConfigDef.Importance.LOW,
-                        CONNECT_PROTOCOL_COMPATIBILITY_DOC);
+                        CONNECT_PROTOCOL_DOC);
     }
 
     @Override

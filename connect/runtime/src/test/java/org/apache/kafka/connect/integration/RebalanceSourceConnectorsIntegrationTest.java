@@ -18,6 +18,7 @@ package org.apache.kafka.connect.integration;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.runtime.AbstractStatus;
+import org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility;
 import org.apache.kafka.connect.runtime.distributed.DistributedConfig;
 import org.apache.kafka.connect.runtime.rest.entities.ConnectorStateInfo;
 import org.apache.kafka.connect.storage.StringConverter;
@@ -75,7 +76,7 @@ public class RebalanceSourceConnectorsIntegrationTest {
     public void setup() throws IOException {
         // setup Connect worker properties
         Map<String, String> workerProps = new HashMap<>();
-        workerProps.put(DistributedConfig.CONNECT_PROTOCOL_COMPATIBILITY, "COOP");
+        workerProps.put(DistributedConfig.CONNECT_PROTOCOL_CONFIG, ConnectProtocolCompatibility.COOPERATIVE.toString());
         workerProps.put(OFFSET_COMMIT_INTERVAL_MS_CONFIG, "30000");
 
         // setup Kafka broker properties

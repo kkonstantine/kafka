@@ -76,7 +76,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testStrictToStrictMetadata() {
+    public void testEagerToEagerMetadata() {
         when(configStorage.snapshot()).thenReturn(configState1);
         ExtendedWorkerState workerState = new ExtendedWorkerState(LEADER_URL, configStorage.snapshot().offset(), null);
         ByteBuffer metadata = ConnectProtocol.serializeMetadata(workerState);
@@ -98,7 +98,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testCoopToStrictMetadata() {
+    public void testCoopToEagerMetadata() {
         when(configStorage.snapshot()).thenReturn(configState1);
         ExtendedWorkerState workerState = new ExtendedWorkerState(LEADER_URL, configStorage.snapshot().offset(), null);
         ByteBuffer metadata = IncrementalCooperativeConnectProtocol.serializeMetadata(workerState);
@@ -109,7 +109,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testStrictToCoopMetadata() {
+    public void testEagerToCoopMetadata() {
         when(configStorage.snapshot()).thenReturn(configState1);
         ConnectProtocol.WorkerState workerState = new ConnectProtocol.WorkerState(LEADER_URL, configStorage.snapshot().offset());
         ByteBuffer metadata = ConnectProtocol.serializeMetadata(workerState);
@@ -120,7 +120,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testStrictToStrictAssignment() {
+    public void testEagerToEagerAssignment() {
         ConnectProtocol.Assignment assignment = new ConnectProtocol.Assignment(
                 ConnectProtocol.Assignment.NO_ERROR, "leader", LEADER_URL, 1L,
                 Arrays.asList(connectorId1, connectorId3), Arrays.asList(taskId2x0));
@@ -175,7 +175,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testStrictToCoopAssignment() {
+    public void testEagerToCoopAssignment() {
         ConnectProtocol.Assignment assignment = new ConnectProtocol.Assignment(
                 ConnectProtocol.Assignment.NO_ERROR, "leader", LEADER_URL, 1L,
                 Arrays.asList(connectorId1, connectorId3), Arrays.asList(taskId2x0));
@@ -204,7 +204,7 @@ public class ConnectProtocolCompatibilityTest {
     }
 
     @Test
-    public void testCoopToStrictAssignment() {
+    public void testCoopToEagerAssignment() {
         ExtendedAssignment assignment = new ExtendedAssignment(
                 ConnectProtocol.Assignment.NO_ERROR, "leader", LEADER_URL, 1L,
                 Arrays.asList(connectorId1, connectorId3), Arrays.asList(taskId2x0), null, null);

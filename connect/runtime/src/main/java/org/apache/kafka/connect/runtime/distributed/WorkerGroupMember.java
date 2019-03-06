@@ -137,7 +137,7 @@ public class WorkerGroupMember {
                     restUrl,
                     configStorage,
                     listener,
-                    ConnectProtocolCompatibility.compatibility(config.getString(DistributedConfig.CONNECT_PROTOCOL_COMPATIBILITY)));
+                    ConnectProtocolCompatibility.compatibility(config.getString(DistributedConfig.CONNECT_PROTOCOL_CONFIG)));
 
             AppInfoParser.registerAppInfo(JMX_PREFIX, clientId, metrics, time.milliseconds());
             log.debug("Connect group member created");

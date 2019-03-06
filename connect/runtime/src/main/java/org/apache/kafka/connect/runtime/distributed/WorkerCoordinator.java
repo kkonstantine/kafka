@@ -45,7 +45,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
+import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOPERATIVE;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 
@@ -105,9 +105,9 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         this.listener = listener;
         this.rejoinRequested = false;
         this.protocolCompatibility = protocolCompatibility;
-        this.assignor = protocolCompatibility == COOP
+        this.assignor = protocolCompatibility == COOPERATIVE
                         ? new IncrementalCooperativeAssignor(logContext)
-                        : new StrictAssignor(logContext);
+                        : new EagerAssignor(logContext);
     }
 
     @Override
@@ -165,14 +165,14 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         ExtendedWorkerState workerState = new ExtendedWorkerState(restUrl, configSnapshot.offset(), assignmentSnapshot);
         ByteBuffer metadata;
         switch (protocolCompatibility) {
-            case STRICT:
+            case EAGER:
                 metadata = ConnectProtocol.serializeMetadata(workerState);
                 return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Collections.singleton(
                         new JoinGroupRequestData.JoinGroupRequestProtocol()
                                 .setName(protocolCompatibility.protocol())
                                 .setMetadata(metadata.array()))
                         .iterator());
-            case COMPAT:
+            case COMPATIBLE:
                 return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Arrays.asList(
                         new JoinGroupRequestData.JoinGroupRequestProtocol()
                                 .setName(protocolCompatibility.protocol())
@@ -181,7 +181,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
                                 .setName(protocolCompatibility.protocol())
                                 .setMetadata(ConnectProtocol.serializeMetadata(workerState).array()))
                         .iterator());
-            case COOP:
+            case COOPERATIVE:
                 return new JoinGroupRequestData.JoinGroupRequestProtocolSet(Collections.singleton(
                         new JoinGroupRequestData.JoinGroupRequestProtocol()
                                 .setName(protocolCompatibility.protocol())
@@ -194,7 +194,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
 
     @Override
     protected void onJoinComplete(int generation, String memberId, String protocol, ByteBuffer memberAssignment) {
-        ExtendedAssignment newAssignment = protocolCompatibility == COOP
+        ExtendedAssignment newAssignment = protocolCompatibility == COOPERATIVE
                 ? IncrementalCooperativeConnectProtocol.deserializeAssignment(memberAssignment)
                 : new ExtendedAssignment(ConnectProtocol.deserializeAssignment(memberAssignment),
                                          Collections.emptyList(),
@@ -209,7 +209,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         }
 
         log.debug("Deserialized new assignment: {}", newAssignment);
-        if (protocolCompatibility == COOP) {
+        if (protocolCompatibility == COOPERATIVE) {
             if (assignmentSnapshot != null) {
                 assignmentSnapshot.connectors().removeAll(newAssignment.revokedConnectors());
                 assignmentSnapshot.tasks().removeAll(newAssignment.revokedTasks());
@@ -232,7 +232,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
     protected void onJoinPrepare(int generation, String memberId) {
         log.info("Rebalance started");
         leaderState(null);
-        if (protocolCompatibility == COOP) {
+        if (protocolCompatibility == COOPERATIVE) {
             log.debug("Cooperative rebalance triggered. Keeping assignment {} until it's "
                       + "explicitly revoked.", assignmentSnapshot);
         } else {

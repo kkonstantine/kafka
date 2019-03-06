@@ -53,7 +53,7 @@ import java.util.Map;
 
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.WorkerState;
-import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOP;
+import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOPERATIVE;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import static org.junit.Assert.assertEquals;
@@ -99,7 +99,7 @@ public class WorkerCoordinatorIncrementalTest {
     // - Expected metadata size
     @Parameters
     public static Iterable<?> mode() {
-        return Arrays.asList(new Object[][]{{COOP, 1}});
+        return Arrays.asList(new Object[][]{{COOPERATIVE, 1}});
     }
 
     @Parameter
