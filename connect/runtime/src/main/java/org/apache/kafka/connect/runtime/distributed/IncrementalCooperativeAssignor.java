@@ -17,7 +17,6 @@
 package org.apache.kafka.connect.runtime.distributed;
 
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
 import org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import org.apache.kafka.connect.runtime.distributed.WorkerCoordinator.ConnectorsAndTasks;
 import org.apache.kafka.connect.runtime.distributed.WorkerCoordinator.WorkerLoad;
@@ -38,6 +37,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.CONNECT_PROTOCOL_V1;
 import static org.apache.kafka.connect.runtime.distributed.WorkerCoordinator.LeaderState;
 
 /**
@@ -73,10 +73,10 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
 
         Long leaderOffset = ensureLeaderConfig(maxOffset, coordinator);
         if (leaderOffset == null) {
-            Map<String, ExtendedAssignment> assignments = fillAssignments(
+            Map<String, ConnectAssignment> assignments = fillAssignments(
                     memberConfigs.keySet(), Assignment.CONFIG_MISMATCH,
                     leaderId, memberConfigs.get(leaderId).url(), maxOffset, Collections.emptyMap(),
-                    Collections.emptyMap(), Collections.emptyMap());
+                    Collections.emptyMap(), Collections.emptyMap(), 0);
             return serializeAssignments(assignments);
         }
         return performTaskAssignment(leaderId, leaderOffset, memberConfigs, coordinator);
@@ -168,10 +168,12 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
 
         coordinator.leaderState(new LeaderState(memberConfigs, connectorAssignments, taskAssignments));
 
-        Map<String, ExtendedAssignment> assignments =
+        //TODO: define delay and pass it in when filling assignments
+        int delay = 0;
+        Map<String, ConnectAssignment> assignments =
                 fillAssignments(memberConfigs.keySet(), Assignment.NO_ERROR, leaderId,
                                 memberConfigs.get(leaderId).url(), maxOffset, incrementalConnectorAssignments,
-                                incrementalTaskAssignments, toRevoke);
+                                incrementalTaskAssignments, toRevoke, delay);
 
         previousAssignment = ConnectorsAndTasks.embed(
                 connectorAssignments.values().stream().flatMap(Collection::stream).collect(Collectors.toList()),
@@ -261,20 +263,22 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
         return revoking;
     }
 
-    private Map<String, ExtendedAssignment> fillAssignments(Collection<String> members, short error,
-                                                            String leaderId, String leaderUrl, long maxOffset,
-                                                            Map<String, Collection<String>> connectorAssignments,
-                                                            Map<String, Collection<ConnectorTaskId>> taskAssignments,
-                                                            Map<String, ConnectorsAndTasks> revoked) {
-        Map<String, ExtendedAssignment> groupAssignment = new HashMap<>();
+    private Map<String, ConnectAssignment> fillAssignments(Collection<String> members, short error,
+                                                           String leaderId, String leaderUrl, long maxOffset,
+                                                           Map<String, Collection<String>> connectorAssignments,
+                                                           Map<String, Collection<ConnectorTaskId>> taskAssignments,
+                                                           Map<String, ConnectorsAndTasks> revoked,
+                                                           int delay) {
+        Map<String, ConnectAssignment> groupAssignment = new HashMap<>();
         for (String member : members) {
             Collection<String> connectorsToStart = connectorAssignments.getOrDefault(member, Collections.emptyList());
             Collection<ConnectorTaskId> tasksToStart = taskAssignments.getOrDefault(member, Collections.emptyList());
             Collection<String> connectorsToStop = revoked.getOrDefault(member, ConnectorsAndTasks.EMPTY).connectors();
             Collection<ConnectorTaskId> tasksToStop = revoked.getOrDefault(member, ConnectorsAndTasks.EMPTY).tasks();
-            ExtendedAssignment assignment =
-                    new ExtendedAssignment(error, leaderId, leaderUrl, maxOffset, connectorsToStart,
-                                           tasksToStart, connectorsToStop, tasksToStop);
+            ConnectAssignment assignment =
+                    new ConnectAssignment(CONNECT_PROTOCOL_V1, error, leaderId, leaderUrl,
+                                          maxOffset, connectorsToStart, tasksToStart,
+                                          connectorsToStop, tasksToStop, delay);
             log.debug("Filling assignment: {} -> {}", member, assignment);
             groupAssignment.put(member, assignment);
         }
@@ -282,7 +286,7 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
         return groupAssignment;
     }
 
-    private Map<String, ByteBuffer> serializeAssignments(Map<String, ExtendedAssignment> assignments) {
+    private Map<String, ByteBuffer> serializeAssignments(Map<String, ConnectAssignment> assignments) {
         return assignments.entrySet()
                 .stream()
                 .collect(Collectors.toMap(

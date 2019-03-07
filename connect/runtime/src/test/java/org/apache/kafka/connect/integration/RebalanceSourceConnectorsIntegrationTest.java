@@ -18,8 +18,6 @@ package org.apache.kafka.connect.integration;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.runtime.AbstractStatus;
-import org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility;
-import org.apache.kafka.connect.runtime.distributed.DistributedConfig;
 import org.apache.kafka.connect.runtime.rest.entities.ConnectorStateInfo;
 import org.apache.kafka.connect.storage.StringConverter;
 import org.apache.kafka.connect.util.clusters.EmbeddedConnectCluster;
@@ -46,6 +44,8 @@ import static org.apache.kafka.connect.runtime.ConnectorConfig.TASKS_MAX_CONFIG;
 import static org.apache.kafka.connect.runtime.ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG;
 import static org.apache.kafka.connect.runtime.SinkConnectorConfig.TOPICS_CONFIG;
 import static org.apache.kafka.connect.runtime.WorkerConfig.OFFSET_COMMIT_INTERVAL_MS_CONFIG;
+import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOPERATIVE;
+import static org.apache.kafka.connect.runtime.distributed.DistributedConfig.CONNECT_PROTOCOL_CONFIG;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -76,7 +76,7 @@ public class RebalanceSourceConnectorsIntegrationTest {
     public void setup() throws IOException {
         // setup Connect worker properties
         Map<String, String> workerProps = new HashMap<>();
-        workerProps.put(DistributedConfig.CONNECT_PROTOCOL_CONFIG, ConnectProtocolCompatibility.COOPERATIVE.toString());
+        workerProps.put(CONNECT_PROTOCOL_CONFIG, COOPERATIVE.toString());
         workerProps.put(OFFSET_COMMIT_INTERVAL_MS_CONFIG, "30000");
 
         // setup Kafka broker properties

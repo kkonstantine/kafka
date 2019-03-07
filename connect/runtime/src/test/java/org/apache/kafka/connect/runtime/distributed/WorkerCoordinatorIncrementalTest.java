@@ -54,7 +54,7 @@ import java.util.Map;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.Assignment;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocol.WorkerState;
 import static org.apache.kafka.connect.runtime.distributed.ConnectProtocolCompatibility.COOPERATIVE;
-import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedAssignment;
+import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.CONNECT_PROTOCOL_V1;
 import static org.apache.kafka.connect.runtime.distributed.IncrementalCooperativeConnectProtocol.ExtendedWorkerState;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -226,9 +226,10 @@ public class WorkerCoordinatorIncrementalTest {
 
         PowerMock.replayAll();
 
-        ExtendedAssignment assignment = new ExtendedAssignment(ExtendedAssignment.NO_ERROR, "member", "leader", 1L,
+        ConnectAssignment assignment = new ConnectAssignment(
+                CONNECT_PROTOCOL_V1, ConnectAssignment.NO_ERROR, "member", "leader", 1L,
                 Collections.singletonList(connectorId1), Arrays.asList(taskId1x0, taskId2x0),
-                Collections.emptyList(), Collections.emptyList());
+                Collections.emptyList(), Collections.emptyList(), 0);
         ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
         coordinator.onJoinComplete(9, null, null, buf);
         List<ProtocolMetadata> serialized = coordinator.metadata();
@@ -267,7 +268,7 @@ public class WorkerCoordinatorIncrementalTest {
                         sync.generationId() == 1 &&
                         sync.groupAssignment().containsKey(consumerId);
             }
-        }, syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+        }, syncGroupResponse(ConnectAssignment.NO_ERROR, "leader", 1L,
                 Collections.singletonList(connectorId1), Collections.emptyList(), Errors.NONE));
         coordinator.ensureActiveGroup();
 
@@ -304,7 +305,7 @@ public class WorkerCoordinatorIncrementalTest {
                         sync.generationId() == 1 &&
                         sync.groupAssignment().isEmpty();
             }
-        }, syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+        }, syncGroupResponse(ConnectAssignment.NO_ERROR, "leader", 1L,
                 Collections.emptyList(), Collections.singletonList(taskId1x0), Errors.NONE
         ));
         coordinator.ensureActiveGroup();
@@ -347,10 +348,10 @@ public class WorkerCoordinatorIncrementalTest {
                         sync.groupAssignment().isEmpty();
             }
         };
-        client.prepareResponse(matcher, syncGroupResponse(ExtendedAssignment.CONFIG_MISMATCH, "leader", 10L,
+        client.prepareResponse(matcher, syncGroupResponse(ConnectAssignment.CONFIG_MISMATCH, "leader", 10L,
                 Collections.emptyList(), Collections.emptyList(), Errors.NONE));
         client.prepareResponse(joinGroupFollowerResponse(1, memberId, "leader", Errors.NONE));
-        client.prepareResponse(matcher, syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+        client.prepareResponse(matcher, syncGroupResponse(ConnectAssignment.NO_ERROR, "leader", 1L,
                 Collections.emptyList(), Collections.singletonList(taskId1x0), Errors.NONE));
         coordinator.ensureActiveGroup();
 
@@ -369,7 +370,7 @@ public class WorkerCoordinatorIncrementalTest {
 
         // join the group once
         client.prepareResponse(joinGroupFollowerResponse(1, "consumer", "leader", Errors.NONE));
-        client.prepareResponse(syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+        client.prepareResponse(syncGroupResponse(ConnectAssignment.NO_ERROR, "leader", 1L,
                 Collections.emptyList(), Collections.singletonList(taskId1x0), Errors.NONE));
         coordinator.ensureActiveGroup();
 
@@ -383,7 +384,7 @@ public class WorkerCoordinatorIncrementalTest {
         // and join the group again
         coordinator.requestRejoin();
         client.prepareResponse(joinGroupFollowerResponse(1, "consumer", "leader", Errors.NONE));
-        client.prepareResponse(syncGroupResponse(ExtendedAssignment.NO_ERROR, "leader", 1L,
+        client.prepareResponse(syncGroupResponse(ConnectAssignment.NO_ERROR, "leader", 1L,
                 Collections.singletonList(connectorId1), Collections.emptyList(), Errors.NONE));
         coordinator.ensureActiveGroup();
 
@@ -535,14 +536,15 @@ public class WorkerCoordinatorIncrementalTest {
 
     private SyncGroupResponse syncGroupResponse(short assignmentError, String leader, long configOffset, List<String> connectorIds,
                                      List<ConnectorTaskId> taskIds, Errors error) {
-        ExtendedAssignment assignment = new ExtendedAssignment(assignmentError, leader, LEADER_URL,
-                configOffset, connectorIds, taskIds, Collections.emptyList(), Collections.emptyList());
+        ConnectAssignment assignment = new ConnectAssignment(
+                CONNECT_PROTOCOL_V1, assignmentError, leader, LEADER_URL, configOffset,
+                connectorIds, taskIds, Collections.emptyList(), Collections.emptyList(), 0);
         ByteBuffer buf = IncrementalCooperativeConnectProtocol.serializeAssignment(assignment);
         return new SyncGroupResponse(error, buf);
     }
 
     private static class MockRebalanceListener implements WorkerRebalanceListener {
-        public ExtendedAssignment assignment = null;
+        public ConnectAssignment assignment = null;
 
         public String revokedLeader;
         public Collection<String> revokedConnectors = Collections.emptyList();
@@ -552,7 +554,7 @@ public class WorkerCoordinatorIncrementalTest {
         public int assignedCount = 0;
 
         @Override
-        public void onAssigned(ExtendedAssignment assignment, int generation) {
+        public void onAssigned(ConnectAssignment assignment, int generation) {
             this.assignment = assignment;
             assignedCount++;
         }
