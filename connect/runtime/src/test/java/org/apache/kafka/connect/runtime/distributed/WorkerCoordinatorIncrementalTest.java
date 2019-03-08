@@ -89,6 +89,8 @@ public class WorkerCoordinatorIncrementalTest {
     private MockRebalanceListener rebalanceListener;
     @Mock private KafkaConfigBackingStore configStorage;
     private WorkerCoordinator coordinator;
+    private int scheduledDelay = 5_000;
+
 
     private ClusterConfigState configState1;
     private ClusterConfigState configState2;
@@ -136,7 +138,8 @@ public class WorkerCoordinatorIncrementalTest {
                 LEADER_URL,
                 configStorage,
                 rebalanceListener,
-                compatibility);
+                compatibility,
+                scheduledDelay);
 
         configState1 = new ClusterConfigState(
                 1L,

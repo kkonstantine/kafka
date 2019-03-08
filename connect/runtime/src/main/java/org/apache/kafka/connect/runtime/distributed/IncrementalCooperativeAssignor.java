@@ -48,10 +48,17 @@ import static org.apache.kafka.connect.runtime.distributed.WorkerCoordinator.Lea
  */
 public class IncrementalCooperativeAssignor implements ConnectAssignor {
     private final Logger log;
-    private ConnectorsAndTasks previousAssignment = ConnectorsAndTasks.EMPTY;
+    private final int maxDelay;
+    private ConnectorsAndTasks previousAssignment;
+    private long scheduledRebalance;
+    private int delay;
 
-    public IncrementalCooperativeAssignor(LogContext logContext) {
+    public IncrementalCooperativeAssignor(LogContext logContext, int maxDelay) {
         this.log = logContext.logger(IncrementalCooperativeAssignor.class);
+        this.maxDelay = maxDelay;
+        this.previousAssignment = ConnectorsAndTasks.EMPTY;
+        this.scheduledRebalance = 0;
+        this.delay = 0;
     }
 
     @Override
@@ -138,8 +145,29 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
             assignConnectors(completeWorkerAssignment, newSubmissions.connectors());
             assignTasks(completeWorkerAssignment, newSubmissions.tasks());
         } else {
+            long now = System.currentTimeMillis();
             log.debug("Found the following connectors and tasks missing from previous assignment: "
-                      + lostAssignments);
+                    + lostAssignments);
+
+            if (scheduledRebalance > 0 && now >= scheduledRebalance) {
+                // delayed rebalance expired and it's time to assign resources
+            } else {
+                if (now < scheduledRebalance) {
+                    // a delayed rebalance is in progress, but it's not yet time to reassign
+                    // unaccounted resources
+                    delay = calculateDelay(now);
+                } else {
+                    // the leader is not aware of a scheduled rebalance, but may the group has one
+                    int maxExistingDelay = maxDelay(memberConfigs);
+                    // Decrease any existing delay by %10 of maxDelay
+                    int decrement = maxDelay / 10;
+                    delay = maxExistingDelay > 0
+                            ? Math.max(0, Math.min(maxExistingDelay - decrement, decrement * 9))
+                            : maxDelay;
+
+                }
+                scheduledRebalance = now + delay;
+            }
         }
 
         log.debug("Complete assignments: {}", currentWorkerAssignment);
@@ -286,6 +314,13 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
         return groupAssignment;
     }
 
+    /**
+     * From a map of workers to assignment object generate the equivalent map of workers to byte
+     * buffers of serialized assignments.
+     *
+     * @param assignments the map of worker assignments
+     * @return the serialized map of assignments to workers
+     */
     private Map<String, ByteBuffer> serializeAssignments(Map<String, ConnectAssignment> assignments) {
         return assignments.entrySet()
                 .stream()
@@ -324,6 +359,18 @@ public class IncrementalCooperativeAssignor implements ConnectAssignor {
                 .flatMap(state -> state.assignment().tasks().stream())
                 .collect(Collectors.toSet());
         return ConnectorsAndTasks.embed(connectors, tasks);
+    }
+
+    private int maxDelay(Map<String, ExtendedWorkerState> memberConfigs) {
+        return memberConfigs.values()
+                .stream()
+                .mapToInt(state -> state.assignment().delay())
+                .max().orElse(0);
+    }
+
+    private int calculateDelay(long now) {
+        long diff = scheduledRebalance - now;
+        return diff > 0 ? (int) Math.min(diff, maxDelay) : 0;
     }
 
     protected void assignConnectors(List<WorkerLoad> workerAssignment, Collection<String> connectors) {

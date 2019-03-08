@@ -88,7 +88,8 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
                              String restUrl,
                              ConfigBackingStore configStorage,
                              WorkerRebalanceListener listener,
-                             ConnectProtocolCompatibility protocolCompatibility) {
+                             ConnectProtocolCompatibility protocolCompatibility,
+                             int maxDelay) {
         super(logContext,
               client,
               groupId,
@@ -108,7 +109,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         this.listener = listener;
         this.rejoinRequested = false;
         this.protocolCompatibility = protocolCompatibility;
-        this.incrementalAssignor = new IncrementalCooperativeAssignor(logContext);
+        this.incrementalAssignor = new IncrementalCooperativeAssignor(logContext, maxDelay);
         this.eagerAssignor = new EagerAssignor(logContext);
         this.currentConnectProtocol = protocolCompatibility == COOPERATIVE
                                       ? CONNECT_PROTOCOL_V1

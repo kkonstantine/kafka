@@ -34,14 +34,13 @@ import static org.apache.kafka.connect.runtime.distributed.WorkerCoordinator.Wor
 import static org.junit.Assert.assertEquals;
 
 public class ConnectAssignorTest {
-    private Logger log;
     private IncrementalCooperativeAssignor assignor;
 
     @Before
     public void setup() {
         LogContext loggerFactory = new LogContext();
-        log = loggerFactory.logger(ConnectAssignor.class);
-        assignor = new IncrementalCooperativeAssignor(loggerFactory);
+        assignor = new IncrementalCooperativeAssignor(
+                loggerFactory, DistributedConfig.SCHEDULED_REBALANCE_MAX_DELAY_MS_DEFAULT);
     }
 
     @After

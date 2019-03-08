@@ -138,7 +138,8 @@ public class WorkerCoordinatorTest {
                 LEADER_URL,
                 configStorage,
                 rebalanceListener,
-                compatibility);
+                compatibility,
+                0);
 
         configState1 = new ClusterConfigState(
                 1L,
