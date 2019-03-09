@@ -358,7 +358,7 @@ public final class WorkerCoordinator extends AbstractCoordinator implements Clos
         }
     }
 
-    private static <K, V> Map<V, K> invertAssignment(Map<K, Collection<V>> assignment) {
+    public static <K, V> Map<V, K> invertAssignment(Map<K, Collection<V>> assignment) {
         Map<V, K> inverted = new HashMap<>();
         for (Map.Entry<K, Collection<V>> assignmentEntry : assignment.entrySet()) {
             K key = assignmentEntry.getKey();

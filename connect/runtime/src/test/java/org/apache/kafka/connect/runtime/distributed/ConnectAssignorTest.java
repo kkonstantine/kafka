@@ -21,7 +21,6 @@ import org.apache.kafka.connect.util.ConnectorTaskId;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
