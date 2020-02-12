@@ -49,13 +49,13 @@ public class EmbeddedConnectClusterAssertions {
      *
      * @param numWorkers the number of online workers
      */
-    public void assertAtLeastNumWorkersAreUp(int numWorkers, String detailMessage) throws InterruptedException {
+    public void assertAtLeastNumWorkersAreUp(int numWorkers, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkWorkersUp(numWorkers, (actual, expected) -> actual >= expected).orElse(false),
                 WORKER_SETUP_DURATION_MS,
                 "Didn't meet the minimum requested number of online workers: " + numWorkers);
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -65,13 +65,13 @@ public class EmbeddedConnectClusterAssertions {
      *
      * @param numWorkers the number of online workers
      */
-    public void assertExactlyNumWorkersAreUp(int numWorkers, String detailMessage) throws InterruptedException {
+    public void assertExactlyNumWorkersAreUp(int numWorkers, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkWorkersUp(numWorkers, (actual, expected) -> actual == expected).orElse(false),
                 WORKER_SETUP_DURATION_MS,
                 "Didn't meet the exact requested number of online workers: " + numWorkers);
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -98,10 +98,8 @@ public class EmbeddedConnectClusterAssertions {
      * @param connectorName the connector name
      * @param numTasks the number of tasks
      * @param detailMessage
-     * @throws InterruptedException
      */
-    public void assertConnectorAndAtLeastNumTasksAreRunning(String connectorName, int numTasks, String detailMessage)
-            throws InterruptedException {
+    public void assertConnectorAndAtLeastNumTasksAreRunning(String connectorName, int numTasks, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkConnectorState(
@@ -113,7 +111,7 @@ public class EmbeddedConnectClusterAssertions {
                 ).orElse(false),
                 CONNECTOR_SETUP_DURATION_MS,
                 "The connector or at least " + numTasks + " of tasks are not running.");
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -124,10 +122,8 @@ public class EmbeddedConnectClusterAssertions {
      * @param connectorName the connector name
      * @param numTasks the number of tasks
      * @param detailMessage the assertion message
-     * @throws InterruptedException
      */
-    public void assertConnectorAndExactlyNumTasksAreRunning(String connectorName, int numTasks, String detailMessage)
-            throws InterruptedException {
+    public void assertConnectorAndExactlyNumTasksAreRunning(String connectorName, int numTasks, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkConnectorState(
@@ -139,7 +135,7 @@ public class EmbeddedConnectClusterAssertions {
                 ).orElse(false),
                 CONNECTOR_SETUP_DURATION_MS,
                 "The connector or exactly " + numTasks + " tasks are not running.");
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -151,10 +147,8 @@ public class EmbeddedConnectClusterAssertions {
      * @param connectorName the connector name
      * @param numTasks the number of tasks
      * @param detailMessage the assertion message
-     * @throws InterruptedException
      */
-    public void assertConnectorIsRunningAndTasksHaveFailed(String connectorName, int numTasks, String detailMessage)
-            throws InterruptedException {
+    public void assertConnectorIsRunningAndTasksHaveFailed(String connectorName, int numTasks, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkConnectorState(
@@ -166,7 +160,7 @@ public class EmbeddedConnectClusterAssertions {
                 ).orElse(false),
                 CONNECTOR_SETUP_DURATION_MS,
                 "Either the connector is not running or not all the " + numTasks + " tasks have failed.");
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -176,16 +170,14 @@ public class EmbeddedConnectClusterAssertions {
      *
      * @param connectorName the connector name
      * @param detailMessage the assertion message
-     * @throws InterruptedException
      */
-    public void assertConnectorAndTasksAreStopped(String connectorName, String detailMessage)
-            throws InterruptedException {
+    public void assertConnectorAndTasksAreStopped(String connectorName, String detailMessage) {
         try {
             waitForCondition(
                 () -> checkConnectorAndTasksAreStopped(connectorName),
                 CONNECTOR_SETUP_DURATION_MS,
                 "At least the connector or one of its tasks is still");
-        } catch (AssertionError e) {
+        } catch (Exception e) {
             throw new AssertionError(detailMessage, e);
         }
     }
@@ -218,9 +210,9 @@ public class EmbeddedConnectClusterAssertions {
      * whether it has at least the given number of tasks, with all the tasks matching the given
      * task state.
      * @param connectorName the connector
-     * @param connectorState
+     * @param connectorState the expected connector state
      * @param numTasks the expected number of tasks
-     * @param tasksState
+     * @param tasksState the expected task state for all the tasks
      * @return true if the connector and tasks are in RUNNING state; false otherwise
      */
     protected Optional<Boolean> checkConnectorState(
