@@ -34,7 +34,6 @@ buildscript {
     classpath "com.github.ben-manes:gradle-versions-plugin:$versions.gradleVersionsPlugin"
     classpath "org.scoverage:gradle-scoverage:$versions.scoveragePlugin"
     classpath "com.github.jengelman.gradle.plugins:shadow:$versions.shadowPlugin"
-    classpath "org.owasp:dependency-check-gradle:$versions.owaspDepCheckPlugin"
     classpath "com.diffplug.spotless:spotless-plugin-gradle:$versions.spotlessPlugin"
     classpath "com.github.spotbugs:spotbugs-gradle-plugin:$versions.spotbugsPlugin"
     classpath "org.gradle:test-retry-gradle-plugin:$versions.testRetryPlugin"
@@ -57,7 +56,6 @@ allprojects {
   }
 
   apply plugin: 'idea'
-  apply plugin: 'org.owasp.dependencycheck'
   apply plugin: 'com.github.ben-manes.versions'
 
   dependencyUpdates {
