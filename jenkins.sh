@@ -19,14 +19,14 @@
 # the modules are executed before the integration tests.
 
 # Run validation checks (compilation and static analysis)
-for i in {1..20}
-do
-  ./gradlew clean compileJava compileScala compileTestJava compileTestScala \
-      spotlessScalaCheck checkstyleMain checkstyleTest spotbugsMain rat \
-      --profile --no-daemon --continue -PxmlSpotBugsReport=true "$@" \
-      || { echo 'Validation steps failed'; exit 1; }
+./gradlew compileJava compileScala compileTestJava compileTestScala \
+    spotlessScalaCheck checkstyleMain checkstyleTest spotbugsMain rat \
+    --profile --no-daemon --continue -PxmlSpotBugsReport=true "$@" \
+    || { echo 'Validation steps failed'; exit 1; }
 
 # Run tests
 
-  ./gradlew testConnect
+for i in {1..20}
+do
+  ./gradlew :connect:runtime:clean :connect:runtime:test --tests org.apache.kafka.connect.integration.ConnectorTopicsIntegrationTest
 done
