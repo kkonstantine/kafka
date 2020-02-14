@@ -26,7 +26,7 @@
 
 # Run tests
 
-for i in {1..20}
+for i in {1..100}
 do
   ./gradlew :connect:runtime:clean :connect:runtime:test --tests org.apache.kafka.connect.integration.ConnectorTopicsIntegrationTest
 done
