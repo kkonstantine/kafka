@@ -117,14 +117,16 @@ public class TopicCreation {
     }
 
     /**
-     * A cache of topic names that have been previously detected to exist. This set is mutable
-     * and is meant to be used by source task that need to track whether topic creation is
-     * required.
+     * Inform this utility instance that a topic has been created and its creation will no
+     * longer be required. After {@link #addTopic(String)} is called for a give {@param topic}
+     * any subsequent calls to {@link #isTopicCreationRequired} will return {@code false} for the
+     * same topic.
      *
-     * @return a mutable set of topic names if topic creation is enabled or an immutable empty set
-     * if topic creation is disabled; never {@code null}
+     * @param topic the topic name to mark as created.
      */
-    public Set<String> topicCache() {
-        return topicCache;
+    public void addTopic(String topic) {
+        if (isTopicCreationEnabled) {
+            topicCache.add(topic);
+        }
     }
 }
